@@ -192,8 +192,11 @@ class Avg(object):
                 avg = result.get()
                 avgs.append(avg)
 
+        # TODO: multiple sort criteria => a tuple combination/function
+        # which could be weird. What DO I want?????
         if sort_key:
             avgs = sorted(avgs, key = lambda avg: avg[sort_key])
+
 
         objs = []
         for avg in avgs:
@@ -205,7 +208,7 @@ class Avg(object):
     @classmethod
     def from_dir(cls, dir: str, *args, **kwargs) -> List[Avg]:
         path = Path(dir)
-        paths = [ p for p in path.glob('**/*') if p.is_file() ]
+        paths = [ p for p in path.glob('**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"}) ]
         avgs = Avg().from_list(paths = paths, *args, **kwargs)
         return(avgs)
 
@@ -360,7 +363,7 @@ def make_thumbnails(
         input_path = Path(input_path)
         # find all files in the dir
         if input_path.is_dir():
-            input_files = [ p for p in input_path.glob('**/*') if p.is_file() ]
+            input_files = [ p for p in input_path.glob('**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"}) ]
         elif input_is_csv:
             input_avgs = Avg.from_csv(input_path)
         elif input_path.is_file():
