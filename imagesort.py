@@ -11,10 +11,12 @@ http://pythonicprose.blogspot.com/2009/09/python-find-average-rgb-color-for-imag
 https://www.hackzine.org/getting-average-image-color-from-python.html
 https://stackoverflow.com/questions/6208980/sorting-a-list-of-rgb-triplets-into-a-spectrum
 """
-from __future__ import annotations # python 3.7+
+from __future__ import annotations  # python 3.7+
 import os
 import sys
 import csv
+import math
+import hilbert
 from io import BytesIO
 from PIL import Image
 import colorsys
@@ -23,19 +25,21 @@ from pathlib import Path
 import argparse
 from typing import Generator, Tuple, List, Dict
 
+
 class Avg(object):
     """
     Holds the attributes of image's average RGB HSV values
     """
+
     def __init__(self,
-            path: str = None,
-            _verbose: bool = False,
-            ignore_vals: List[Tuple[int, int, int]] = None,
-            *args, **kwargs):
+                 path: str = None,
+                 _verbose: bool = False,
+                 ignore_vals: List[Tuple[int, int, int]] = None,
+                 *args, **kwargs):
         if path:
             self.path = path
             avg = self.get_avg_rgb_hsv(
-                path = self.path, _verbose = _verbose, ignore_vals = ignore_vals, *args, **kwargs)
+                path=self.path, _verbose=_verbose, ignore_vals=ignore_vals, *args, **kwargs)
             self.red = avg['red']
             self.green = avg['green']
             self.blue = avg['blue']
@@ -74,7 +78,7 @@ class Avg(object):
         ignore_pixel_ids = set()
         if ignore_vals:
             for vals in ignore_vals:
-                id = "{}.{}.{}".format(vals[0], vals[1], vals[2]) # RGB values
+                id = "{}.{}.{}".format(vals[0], vals[1], vals[2])  # RGB values
                 ignore_pixel_ids.add(id)
 
         img = Image.open(path).convert('RGB')
@@ -85,17 +89,17 @@ class Avg(object):
             'red': 0,
             'green': 0,
             'blue': 0,
-            'pixels_total' : size_x * size_y,
-            'pixels_counted' : 0,
+            'pixels_total': size_x * size_y,
+            'pixels_counted': 0,
             'path': path
-            }
+        }
 
         if _verbose:
             print("Loaded image: {0} total pixels".format(avg['pixels_total']))
 
         # add up the RGB values for all pixels
-        for x in range(img.size[0]): # iterate over all x pixels
-            for y in range(img.size[1]): # iterate over all y pixels
+        for x in range(img.size[0]):  # iterate over all x pixels
+            for y in range(img.size[1]):  # iterate over all y pixels
                 red = pixels[x, y][0]
                 green = pixels[x, y][1]
                 blue = pixels[x, y][2]
@@ -120,35 +124,37 @@ class Avg(object):
         avg['blue'] = avg['blue'] // avg['pixels_counted']
 
         # convert to HSV
-        hue, saturation, value = colorsys.rgb_to_hsv(avg['red'], avg['green'], avg['blue'])
+        hue, saturation, value = colorsys.rgb_to_hsv(
+            avg['red'], avg['green'], avg['blue'])
         avg['hue'] = hue
         avg['saturation'] = saturation
         avg['value'] = value
 
         # calculate percent
-        avg['pixels_pcnt'] = round((float(avg['pixels_counted']) / float(avg['pixels_total'])) * 100, 1)
+        avg['pixels_pcnt'] = round(
+            (float(avg['pixels_counted']) / float(avg['pixels_total'])) * 100, 1)
 
-        return(avg)
+        return (avg)
 
     def to_dict(self):
         d = {
-        'red': self.red,
-        'green': self.green,
-        'blue': self.blue,
-        'hue': self.hue,
-        'saturation': self.saturation,
-        'value': self.value,
-        'pixels_total': self.pixels_total,
-        'pixels_counted': self.pixels_counted,
-        'pixels_pcnt': self.pixels_pcnt,
-        'path': self.path
+            'red': self.red,
+            'green': self.green,
+            'blue': self.blue,
+            'hue': self.hue,
+            'saturation': self.saturation,
+            'value': self.value,
+            'pixels_total': self.pixels_total,
+            'pixels_counted': self.pixels_counted,
+            'pixels_pcnt': self.pixels_pcnt,
+            'path': self.path
         }
-        return(d)
+        return (d)
 
     def __repr__(self):
         r = 'Avg(' + 'path=' + self.path.__repr__()
         r += ')'
-        return(r)
+        return (r)
 
     @classmethod
     def from_dict(cls, d: Dict) -> Avg:
@@ -156,18 +162,19 @@ class Avg(object):
         Return an Avg instance from a pre-made dict of values
         """
         avg = cls()
-        attrs = ['path', 'red', 'green', 'blue', 'hue', 'saturation', 'value', 'pixels_total', 'pixels_counted', 'pixels_pcnt']
+        attrs = ['path', 'red', 'green', 'blue', 'hue', 'saturation',
+                 'value', 'pixels_total', 'pixels_counted', 'pixels_pcnt']
         for a in attrs:
             setattr(avg, a, d[a])
-        return(avg)
+        return (avg)
 
     @classmethod
     def from_list(cls,
-        paths: List[str],
-        sort_key: str = "hue",
-        threads: int = 2,
-        _verbose: bool = False,
-        *args, **kwargs) -> List[Avg]:
+                  paths: List[str],
+                  sort_key: str = "hue",
+                  threads: int = 2,
+                  _verbose: bool = False,
+                  *args, **kwargs) -> List[Avg]:
         """
         Return a list of Avg objects by evaluating a list of paths in parallel
         """
@@ -184,7 +191,8 @@ class Avg(object):
             # generate the aysnc result instances
             results = []
             for path in paths:
-                result = pool.apply_async(cls.get_avg_rgb_hsv, args=(path, *args), kwds=kwargs)
+                result = pool.apply_async(
+                    cls.get_avg_rgb_hsv, args=(path, *args), kwds=kwargs)
                 results.append(result)
 
              # get each result
@@ -192,48 +200,68 @@ class Avg(object):
                 avg = result.get()
                 avgs.append(avg)
 
-        # TODO: multiple sort criteria => a tuple combination/function
-        # which could be weird. What DO I want?????
         if sort_key:
-            avgs = sorted(avgs, key = lambda avg: avg[sort_key])
-
+            if sort_key == 'step':
+                avgs = sorted(avgs, key=lambda r_g_b: step(
+                    r_g_b['red'], r_g_b['green'], r_g_b['blue'], 8))
+            if sort_key == 'hilbert':
+                avgs = sorted(avgs, key=lambda r_g_b: hilbert.Hilbert_to_int(
+                    [int(r_g_b['red']*255), int(r_g_b['green']*255), int(r_g_b['blue']*255)]))
+            else:
+                avgs = sorted(avgs, key=lambda avg: avg[sort_key])
 
         objs = []
         for avg in avgs:
             obj = cls().from_dict(avg)
             objs.append(obj)
 
-        return(objs)
+        return (objs)
 
     @classmethod
     def from_dir(cls, dir: str, *args, **kwargs) -> List[Avg]:
         path = Path(dir)
-        paths = [ p for p in path.glob('**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"}) ]
-        avgs = Avg().from_list(paths = paths, *args, **kwargs)
-        return(avgs)
+        paths = [p for p in path.glob(
+            '**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"})]
+        avgs = Avg().from_list(paths=paths, *args, **kwargs)
+        return (avgs)
 
     @classmethod
     def from_csv(cls, csv_file: str) -> List[Avg]:
-        int_attrs = ['red', 'green', 'blue', 'value', 'pixels_total', 'pixels_counted' ]
+        int_attrs = ['red', 'green', 'blue', 'value',
+                     'pixels_total', 'pixels_counted']
         float_attrs = ['hue', 'saturation', 'pixels_pcnt']
         avgs = []
         with open(csv_file, "r") as f:
-            reader = csv.DictReader(f, delimiter = ',')
+            reader = csv.DictReader(f, delimiter=',')
             for row in reader:
                 for key in int_attrs:
                     row[key] = int(row[key])
                 for key in float_attrs:
                     row[key] = float(row[key])
                 avgs.append(cls.from_dict(row))
-        return(avgs)
+        return (avgs)
 
 
+# from https://www.alanzucconi.com/2015/09/30/colour-sorting/
+def step(r, g, b, repetitions=1):
+    lum = math.sqrt(.241 * r + .691 * g + .068 * b)
 
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
 
+    h2 = int(h * repetitions)
+    lum2 = int(lum * repetitions)
+    v2 = int(v * repetitions)
 
+    if h2 % 2 == 1:
+        v2 = repetitions - v2
+        lum2 = repetitions - lum2
+
+    return (h2, lum2, v2)
 
 # ~~~~~ CLI ~~~~~ #
 # functions for running the module as a command line script
+
+
 def load_all_pixels(path: str) -> List[Tuple[int, int, int]]:
     all_pixels = []
     # load the unique pixels from the file
@@ -242,21 +270,23 @@ def load_all_pixels(path: str) -> List[Tuple[int, int, int]]:
     size_x = img.size[0]
     size_y = img.size[1]
 
-    for x in range(img.size[0]): # iterate over all x pixels
-        for y in range(img.size[1]): # iterate over all y pixels
+    for x in range(img.size[0]):  # iterate over all x pixels
+        for y in range(img.size[1]):  # iterate over all y pixels
             red = pixels[x, y][0]
             green = pixels[x, y][1]
             blue = pixels[x, y][2]
             all_pixels.append((red, green, blue))
-    return(all_pixels)
+    return (all_pixels)
+
 
 def write_csv(dicts: List[Dict], output_file: str):
     with open(output_file, "w") as fout:
         fieldnames = dicts[0].keys()
-        writer = csv.DictWriter(fout, fieldnames = fieldnames)
+        writer = csv.DictWriter(fout, fieldnames=fieldnames)
         writer.writeheader()
         for d in dicts:
             writer.writerow(d)
+
 
 def print_from_path(
         path: str,
@@ -264,7 +294,7 @@ def print_from_path(
         threads: int = 4,
         ignore_file: str = None,
         sort_key: str = 'hue',
-        func = None):
+        func=None):
     """
     Print image average RGB values to stdout or file
     """
@@ -283,19 +313,19 @@ def print_from_path(
         raise
 
     if path.is_dir():
-        avgs = Avg().from_dir(dir = path, threads = int(threads), **avg_args)
+        avgs = Avg().from_dir(dir=path, threads=int(threads), **avg_args)
         dicts = [avg.to_dict() for avg in avgs]
 
     if path.is_file():
-        avg = Avg(path = path, **avg_args)
+        avg = Avg(path=path, **avg_args)
         dicts = [avg.to_dict()]
 
     if output_file == '-':
-        fout = sys.stdout # with open(sys.stdout) as fout:
+        fout = sys.stdout  # with open(sys.stdout) as fout:
     else:
         fout = open(output_file, "w")
     fieldnames = dicts[0].keys()
-    writer = csv.DictWriter(fout, fieldnames = fieldnames)
+    writer = csv.DictWriter(fout, fieldnames=fieldnames)
     writer.writeheader()
     for d in dicts:
         writer.writerow(d)
@@ -312,7 +342,7 @@ def make_thumbnail(
         img_width: int = 300,
         img_height: int = 300,
         bar_height: int = 50,
-        ) -> Tuple[str, Image]:
+) -> Tuple[str, Image]:
     """
     Make a thumbnail from a single image and its average RGB values
     Using the avg RBG as a background color upon which to place and scaled version
@@ -323,18 +353,19 @@ def make_thumbnail(
     canvas_size = (img_width, img_height + bar_height)
     canvas = Image.new('RGB', canvas_size, (red, blue, green))
     # load image and add to canvas
-    image = Image.open(input_path).resize((img_width, img_height), Image.ANTIALIAS)
+    image = Image.open(input_path).resize(
+        (img_width, img_height), Image.ANTIALIAS)
     canvas.paste(image, (0, 0))
     canvas.save(output_path, format='JPEG')
-    return(output_path, canvas)
+    return (output_path, canvas)
 
 
 def make_thumbnails(
         output_dir: str,
-        input_path: str = None, # a single input file or directory
-        input_files: List[str] = None, # list of file paths
-        input_avgs: List[Avg] = None, # list of Avg instances
-        input_is_csv: bool = False, # input_path is a .csv file
+        input_path: str = None,  # a single input file or directory
+        input_files: List[str] = None,  # list of file paths
+        input_avgs: List[Avg] = None,  # list of Avg instances
+        input_is_csv: bool = False,  # input_path is a .csv file
         x: int = 300,
         y: int = 300,
         bar_height: int = 50,
@@ -363,7 +394,8 @@ def make_thumbnails(
         input_path = Path(input_path)
         # find all files in the dir
         if input_path.is_dir():
-            input_files = [ p for p in input_path.glob('**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"}) ]
+            input_files = [p for p in input_path.glob(
+                '**/*') if (p.is_file() and p.suffix in {".jpg", ".jpeg", ".png"})]
         elif input_is_csv:
             input_avgs = Avg.from_csv(input_path)
         elif input_path.is_file():
@@ -374,7 +406,7 @@ def make_thumbnails(
 
     if input_files and not input_avgs:
         # NOTE: the images will get sorted by avg RGB HSV here unless sort_key = False is pased
-        input_avgs = Avg().from_list(paths = input_files, *args, **avg_args, **kwargs)
+        input_avgs = Avg().from_list(paths=input_files, *args, **avg_args, **kwargs)
 
     # make a list of tuples for the values we need to make each thumbnail
     rgb_paths = []
@@ -398,28 +430,29 @@ def make_thumbnails(
             'img_width': x,
             'img_height': y,
             'bar_height': bar_height
-            }
+        }
         output, canvas = make_thumbnail(**kwds)
         output_paths.append(output)
-    return(output_paths)
+    return (output_paths)
+
 
 def make_collage(
         input_dicts: List[Dict] = None,
         input_avgs: List[Avg] = None,
-        input_path: str = None, # dir or csv or file list to load files from
+        input_path: str = None,  # dir or csv or file list to load files from
         input_is_csv: bool = False,
         output_file: str = "collage.jpg",
-        x: int = 300, # width of each image
-        y: int = 300, # height of each image
-        ncol: int = 8, # number of columns in the collage
-        bar_height: int = 50, # height for average colore bar on each image
+        x: int = 300,  # width of each image
+        y: int = 300,  # height of each image
+        ncol: int = 8,  # number of columns in the collage
+        bar_height: int = 50,  # height for average colore bar on each image
         sort_key: str = 'hue',
         *args, **kwargs) -> str:
     """
     Make a collage image out of the supplied input image
     Adapted from https://github.com/fwenzel/collage
     """
-    avg_args = {'sort_key':sort_key}
+    avg_args = {'sort_key': sort_key}
 
     if not any([input_dicts, input_avgs, input_path]):
         print(">>> ERROR: either input_avgs or input_dicts or input_path must be supplied")
@@ -430,10 +463,11 @@ def make_collage(
             input_avgs = Avg.from_csv(input_path)
         else:
             # NOTE: this will automatically apply sorting
-            input_avgs = Avg.from_dir(dir = input_path, *args, **avg_args, **kwargs)
+            input_avgs = Avg.from_dir(
+                dir=input_path, *args, **avg_args, **kwargs)
 
     if input_dicts and not input_avgs:
-        input_avgs = [ Avg.from_dict(d) for d in input_dicts ]
+        input_avgs = [Avg.from_dict(d) for d in input_dicts]
 
     # get configuration for the output collage
     num_input_images = len(input_avgs)
@@ -461,10 +495,12 @@ def make_collage(
         yoff = y * img_height_padded
 
         # load the input image and resize
-        image = Image.open(avg.path).resize((img_width, img_height), Image.ANTIALIAS)
+        image = Image.open(avg.path).resize(
+            (img_width, img_height), Image.ANTIALIAS)
 
         # place color bar on the canvas
-        bar_coord = (xoff, yoff, xoff + img_width, yoff + img_height + bar_height)
+        bar_coord = (xoff, yoff, xoff + img_width,
+                     yoff + img_height + bar_height)
         canvas.paste(rgb, bar_coord)
 
         # Place tile on canvas.
@@ -475,12 +511,13 @@ def make_collage(
     # save canvas
     canvas.save(output_file)
 
-    return(output_file)
+    return (output_file)
+
 
 def make_gif(
         input_path: str = None,
         input_avgs: List[Avg] = None,
-        input_is_csv: bool = False, # input_path is a .csv file
+        input_is_csv: bool = False,  # input_path is a .csv file
         output_file: str = "image.gif",
         ignore_file: str = None,
         x: int = 300,
@@ -502,7 +539,7 @@ def make_gif(
     img_height = y
 
     # check if ignore file was used
-    avg_args = {'sort_key':sort_key}
+    avg_args = {'sort_key': sort_key}
     ignore_pixels = []
     if ignore_file:
         ignore_pixels = set(load_all_pixels(ignore_file))
@@ -516,12 +553,13 @@ def make_gif(
             input_avgs = Avg.from_csv(input_path)
         else:
             # NOTE: this will automatically apply sorting
-            input_avgs = Avg.from_dir(dir = input_path, *args, **avg_args, **kwargs)
+            input_avgs = Avg.from_dir(
+                dir=input_path, *args, **avg_args, **kwargs)
 
     # start making thumbnails for each image
     thumbnails = []
     for avg in input_avgs:
-        output_obj = BytesIO() # store the thumbnails in memory
+        output_obj = BytesIO()  # store the thumbnails in memory
         kwds = {
             'red': avg.red,
             'blue': avg.blue,
@@ -531,16 +569,16 @@ def make_gif(
             'img_width': img_width,
             'img_height': img_height,
             'bar_height': bar_height
-            }
+        }
         output_obj, canvas = make_thumbnail(**kwds)
         thumbnails.append(canvas)
 
     # write out the final gif animation
     first = thumbnails.pop(0)
     first.save(fp=output_file, format='GIF', append_images=thumbnails,
-             save_all=True, duration=100, loop=0)
+               save_all=True, duration=100, loop=0)
 
-    return(output_file)
+    return (output_file)
 
 
 def main():
@@ -550,81 +588,117 @@ def main():
     TODO: move common args to top level parser
     """
     # top level CLI arg parser; args common to all output files go here
-    parser = argparse.ArgumentParser(description = '')
+    parser = argparse.ArgumentParser(description='')
 
     # add sub-parsers for specific file outputs
-    subparsers = parser.add_subparsers(help ='Sub-commands available')
+    subparsers = parser.add_subparsers(help='Sub-commands available')
 
-    sort_key_choices = ['path', 'red', 'green', 'blue', 'hue', 'saturation', 'value', 'pixels_total', 'pixels_counted', 'pixels_pcnt']
+    sort_key_choices = ['path', 'red', 'green', 'blue', 'hue', 'saturation',
+                        'value', 'pixels_total', 'pixels_counted', 'pixels_pcnt',
+                        'step', 'hilbert']
 
     # subparser for printing avg table output
-    _print = subparsers.add_parser('print', help = 'Print sorted image data to console')
-    _print.add_argument(dest = 'path', help = 'Input path to file or dir to print data for')
-    _print.add_argument('--output', dest = 'output_file', default = "-", help = 'The name of the output file')
-    _print.add_argument('--threads', dest = 'threads', default = 4, help = 'Number of files to process in parallel')
-    _print.add_argument('--ignore', dest = 'ignore_file', default = None, help = 'File with pixels that should be ignored when calculating averages')
-    _print.add_argument('-k', '--key', dest = 'sort_key', default = 'hue',
-        choices = sort_key_choices, help = 'Value to use for sorting output entries')
-    _print.set_defaults(func = print_from_path)
+    _print = subparsers.add_parser(
+        'print', help='Print sorted image data to console')
+    _print.add_argument(
+        dest='path', help='Input path to file or dir to print data for')
+    _print.add_argument('--output', dest='output_file',
+                        default="-", help='The name of the output file')
+    _print.add_argument('--threads', dest='threads', default=4,
+                        help='Number of files to process in parallel')
+    _print.add_argument('--ignore', dest='ignore_file', default=None,
+                        help='File with pixels that should be ignored when calculating averages')
+    _print.add_argument('-k', '--key', dest='sort_key', default='hue',
+                        choices=sort_key_choices, help='Value to use for sorting output entries')
+    _print.set_defaults(func=print_from_path)
     """
     $ ./imagesort.py print assets/ --threads 6 --ignore ignore-pixels-white.jpg
     $ ./imagesort.py print assets/ --threads 6 --ignore ignore-pixels-white.jpg > data.csv
     """
 
     # subparser for making thumbnails
-    _thumbnails = subparsers.add_parser('thumbnails', help = 'Create thumbnails which include the average color for each image')
-    _thumbnails.add_argument('input_path', help = 'Input path to file or dir to make thumbnails for')
-    _thumbnails.add_argument('--csv', dest = 'input_is_csv', action = "store_true", help = 'Input item is a .csv file to load data from')
-    _thumbnails.add_argument('-o', '--output', dest = 'output_dir', required = True, help = 'The name of the output directory')
-    _thumbnails.add_argument('--threads', dest = 'threads', default = 4, help = 'Number of files to process in parallel')
-    _thumbnails.add_argument('--ignore', dest = 'ignore_file', default = None, help = 'File with pixels that should be ignored when calculating averages')
-    _thumbnails.add_argument('--no-rename', dest = 'rename', action = "store_false", help = 'Do not rename the output files. WARNING: files with the same basename will get overwritten')
-    _thumbnails.add_argument('-x', dest = 'x', default = 300, type = int, help = 'Width of output image thumbnail')
-    _thumbnails.add_argument('-y', dest = 'y', default = 300, type = int, help = 'Height of output image thumbnail')
-    _thumbnails.add_argument('--bar', dest = 'bar_height', default = 50, type = int, help = 'Height of output image average color bar for thumbnail')
-    _thumbnails.add_argument('-k', '--key', dest = 'sort_key', default = 'hue',
-        choices = sort_key_choices, help = 'Value to use for sorting output entries')
-    _thumbnails.set_defaults(func = make_thumbnails)
+    _thumbnails = subparsers.add_parser(
+        'thumbnails', help='Create thumbnails which include the average color for each image')
+    _thumbnails.add_argument(
+        'input_path', help='Input path to file or dir to make thumbnails for')
+    _thumbnails.add_argument('--csv', dest='input_is_csv', action="store_true",
+                             help='Input item is a .csv file to load data from')
+    _thumbnails.add_argument('-o', '--output', dest='output_dir',
+                             required=True, help='The name of the output directory')
+    _thumbnails.add_argument('--threads', dest='threads',
+                             default=4, help='Number of files to process in parallel')
+    _thumbnails.add_argument('--ignore', dest='ignore_file', default=None,
+                             help='File with pixels that should be ignored when calculating averages')
+    _thumbnails.add_argument('--no-rename', dest='rename', action="store_false",
+                             help='Do not rename the output files. WARNING: files with the same basename will get overwritten')
+    _thumbnails.add_argument('-x', dest='x', default=300,
+                             type=int, help='Width of output image thumbnail')
+    _thumbnails.add_argument('-y', dest='y', default=300,
+                             type=int, help='Height of output image thumbnail')
+    _thumbnails.add_argument('--bar', dest='bar_height', default=50, type=int,
+                             help='Height of output image average color bar for thumbnail')
+    _thumbnails.add_argument('-k', '--key', dest='sort_key', default='hue',
+                             choices=sort_key_choices, help='Value to use for sorting output entries')
+    _thumbnails.set_defaults(func=make_thumbnails)
     """
     $ ./imagesort.py thumbnails assets/ --output thumbnail_output/ --threads 6
     """
 
     # subparser for making collage
-    _collage = subparsers.add_parser('collage', help = 'Create collage from all images which includes the average color for each image')
-    _collage.add_argument('input_path', help = 'Input path to file or dir to make thumbnails for')
-    _collage.add_argument('-o', '--output', dest = 'output_file', default = 'collage.jpg', help = 'Output file')
-    _collage.add_argument('--threads', dest = 'threads', default = 4, help = 'Number of files to process in parallel from dir input')
-    _collage.add_argument('--csv', dest = 'input_is_csv', action = "store_true", help = 'Input item is a .csv file to load data from')
-    _collage.add_argument('-x', dest = 'x', default = 300, type = int, help = 'Width of output image thumbnail for collage')
-    _collage.add_argument('-y', dest = 'y', default = 300, type = int, help = 'Height of output image thumbnail for collage')
-    _collage.add_argument('--bar', dest = 'bar_height', default = 50, type = int, help = 'Height of output image average color bar for thumbnail for collage')
-    _collage.add_argument('-n', '--ncol', dest = 'ncol', default = 8, type = int, help = 'Number of columns in the collage')
-    _collage.add_argument('-k', '--key', dest = 'sort_key', default = 'hue',
-        choices = sort_key_choices, help = 'Value to use for sorting output entries')
-    _collage.set_defaults(func = make_collage)
+    _collage = subparsers.add_parser(
+        'collage', help='Create collage from all images which includes the average color for each image')
+    _collage.add_argument(
+        'input_path', help='Input path to file or dir to make thumbnails for')
+    _collage.add_argument('-o', '--output', dest='output_file',
+                          default='collage.jpg', help='Output file')
+    _collage.add_argument('--threads', dest='threads', default=4,
+                          help='Number of files to process in parallel from dir input')
+    _collage.add_argument('--csv', dest='input_is_csv', action="store_true",
+                          help='Input item is a .csv file to load data from')
+    _collage.add_argument('-x', dest='x', default=300, type=int,
+                          help='Width of output image thumbnail for collage')
+    _collage.add_argument('-y', dest='y', default=300, type=int,
+                          help='Height of output image thumbnail for collage')
+    _collage.add_argument('--bar', dest='bar_height', default=50, type=int,
+                          help='Height of output image average color bar for thumbnail for collage')
+    _collage.add_argument('-n', '--ncol', dest='ncol', default=8,
+                          type=int, help='Number of columns in the collage')
+    _collage.add_argument('-k', '--key', dest='sort_key', default='hue',
+                          choices=sort_key_choices, help='Value to use for sorting output entries')
+    _collage.set_defaults(func=make_collage)
     """
     $ ./imagesort.py collage assets/ --output collage.jpg --threads 6
     $ ./imagesort.py collage data.csv --output collage.jpg --csv
     """
 
-    _gif = subparsers.add_parser('gif', help = 'Create gif from all images which includes the average color for each image')
-    _gif.add_argument('input_path', help = 'Input path to file or dir to make thumbnails for')
-    _gif.add_argument('--csv', dest = 'input_is_csv', action = "store_true", help = 'Input item is a .csv file to load data from')
-    _gif.add_argument('-o', '--output', dest = 'output_file', default = 'image.gif', help = 'Output file')
-    _gif.add_argument('--threads', dest = 'threads', default = 4, help = 'Number of files to process in parallel from dir input')
-    _gif.add_argument('--ignore', dest = 'ignore_file', default = None, help = 'File with pixels that should be ignored when calculating averages')
-    _gif.add_argument('-x', dest = 'x', default = 300, type = int, help = 'Width of output image thumbnail for gif')
-    _gif.add_argument('-y', dest = 'y', default = 300, type = int, help = 'Height of output image thumbnail for gif')
-    _gif.add_argument('--bar', dest = 'bar_height', default = 50, type = int, help = 'Height of output image average color bar for thumbnail for gif')
-    _gif.add_argument('-k', '--key', dest = 'sort_key', default = 'hue',
-        choices = sort_key_choices, help = 'Value to use for sorting output entries')
-    _gif.set_defaults(func = make_gif)
+    _gif = subparsers.add_parser(
+        'gif', help='Create gif from all images which includes the average color for each image')
+    _gif.add_argument(
+        'input_path', help='Input path to file or dir to make thumbnails for')
+    _gif.add_argument('--csv', dest='input_is_csv', action="store_true",
+                      help='Input item is a .csv file to load data from')
+    _gif.add_argument('-o', '--output', dest='output_file',
+                      default='image.gif', help='Output file')
+    _gif.add_argument('--threads', dest='threads', default=4,
+                      help='Number of files to process in parallel from dir input')
+    _gif.add_argument('--ignore', dest='ignore_file', default=None,
+                      help='File with pixels that should be ignored when calculating averages')
+    _gif.add_argument('-x', dest='x', default=300, type=int,
+                      help='Width of output image thumbnail for gif')
+    _gif.add_argument('-y', dest='y', default=300, type=int,
+                      help='Height of output image thumbnail for gif')
+    _gif.add_argument('--bar', dest='bar_height', default=50, type=int,
+                      help='Height of output image average color bar for thumbnail for gif')
+    _gif.add_argument('-k', '--key', dest='sort_key', default='hue',
+                      choices=sort_key_choices, help='Value to use for sorting output entries')
+    _gif.set_defaults(func=make_gif)
     """
     $ ./imagesort.py gif assets/ --output image.gif --threads 6
     """
 
     args = parser.parse_args()
     args.func(**vars(args))
+
 
 if __name__ == '__main__':
     main()
